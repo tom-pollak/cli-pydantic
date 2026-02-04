@@ -1,6 +1,9 @@
 # cli-pydantic
 
-Turn a Pydantic model into a CLI. Config files (JSON/YAML) and `--override` flags are merged and validated automatically.
+Turn a Pydantic model into a CLI. I dislike every other CLI library so here's yet another one.
+
+- CLI defined by Pydantic
+- Use multiple YAML / JSON configs with `--flag` CLI overrides.
 
 ## Install
 
@@ -34,15 +37,22 @@ cfg = cli(Config, desc="Training pipeline")
 ```
 
 ```bash
-# pure CLI
+# CLI, use default from Pydantic
 python train.py --model.arch vit_base --model.lr 3e-4 --epochs 50
 
-# from a config file
+# From a config file
 python train.py base.yaml
 
-# layer multiple configs, then override with flags
+# Layer multiple configs, then override with flags
 python train.py base.yaml fast.yaml --model.lr 0.05 --epochs 3
 
-# lists and booleans
-python train.py --model.layers 16,32 --verbose --no-verbose
+# Lists and booleans
+python train.py --model.layers 16,32 --verbose
 ```
+
+## Semantics:
+
+- Use `--foo bar` or `--foo=bar`
+- For lists: `--nums=1,2,3` or `--nums 1 --nums=2 --nums 3`
+- For bools: `--enable` / `--no-enable`
+- Lists will _replace_ previous configs on override -- not append!
