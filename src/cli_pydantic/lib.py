@@ -135,6 +135,19 @@ def load_config(path: Path) -> dict:
 
 
 def cli[T: BaseModel](model_cls: type[T], desc: str = "") -> T:
+    """Build a CLI from a Pydantic model, merging config files and --overrides.
+
+    Positional arguments are paths to JSON/YAML config files (later files
+    override earlier ones).  Any remaining ``--key value`` flags are parsed
+    as field overrides using dot-notation (e.g. ``--model.lr 0.01``).
+
+    Args:
+        model_cls: The Pydantic model class that defines the config schema.
+        desc: Optional description shown in ``--help`` output.
+
+    Returns:
+        A validated instance of *model_cls*.
+    """
     parser = argparse.ArgumentParser(
         description=desc,
         usage="%(prog)s [-h] [configs ...] [--overrides ...]",
