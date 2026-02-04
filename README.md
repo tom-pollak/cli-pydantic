@@ -10,8 +10,6 @@ pip install cli-pydantic
 
 ## Usage
 
-Define your config with nested models, lists, and flags:
-
 ```python
 # train.py
 from pydantic import BaseModel
@@ -35,52 +33,16 @@ class Config(BaseModel):
 cfg = cli(Config, desc="Training pipeline")
 ```
 
-### Config files
-
-```yaml
-# base.yaml
-epochs: 50
-data:
-  path: /datasets/imagenet
-model:
-  arch: vit_base
-  lr: 3e-4
-```
-
-```yaml
-# fast.yaml — a smaller run for debugging
-epochs: 5
-model:
-  lr: 1e-2
-  layers: [32, 64]
-data:
-  splits: [train]
-```
-
-### Layered configs with CLI overrides
-
-Multiple config files are deep-merged left to right, then CLI flags override everything:
-
 ```bash
-# base config only
+# pure CLI
+python train.py --model.arch vit_base --model.lr 3e-4 --epochs 50
+
+# from a config file
 python train.py base.yaml
 
-# base + fast overlay (fast.yaml overrides base.yaml)
-python train.py base.yaml fast.yaml
-
-# base + fast + CLI overrides on top
+# layer multiple configs, then override with flags
 python train.py base.yaml fast.yaml --model.lr 0.05 --epochs 3
 
-# lists via comma-separated values
-python train.py base.yaml --model.layers 16,32 --data.splits train,val,test
-
-# boolean flags
-python train.py base.yaml --verbose
-python train.py base.yaml --no-verbose
-```
-
-### No config file — pure CLI
-
-```bash
-python train.py --model.arch resnet18 --model.lr 0.01 --data.path ./my_data --epochs 20
+# lists and booleans
+python train.py --model.layers 16,32 --verbose --no-verbose
 ```
