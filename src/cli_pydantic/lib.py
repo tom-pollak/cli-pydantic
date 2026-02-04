@@ -1,5 +1,5 @@
-import argparse
 import json
+import sys
 from collections import deque
 from pathlib import Path
 from typing import get_origin
@@ -27,12 +27,8 @@ def resolve_field_type(model_cls: type[BaseModel], path: list[str]) -> type | No
     return None
 
 
-def parse_unknown_args(tokens: list[str], model_cls: type[BaseModel]) -> dict:
+def parse_flags(tokens: list[str], model_cls: type[BaseModel]) -> dict:
     out = {}
-    q = deque(tokens)
-
-    def has_value() -> bool:
-        return bool(q) and not q[0].startswith("--")
 
     def route(key: str) -> list[str]:
         parts = key.replace("-", "_").split(".")
@@ -56,6 +52,10 @@ def parse_unknown_args(tokens: list[str], model_cls: type[BaseModel]) -> dict:
         else:
             cur[k] = val
 
+    def has_value() -> bool:
+        return bool(q) and not q[0].startswith("--")
+
+    q = deque(tokens)
     while q:
         t = q.popleft()
         if not t.startswith("--"):
@@ -148,25 +148,33 @@ def cli[T: BaseModel](model_cls: type[T], desc: str = "") -> T:
     Returns:
         A validated instance of *model_cls*.
     """
-    parser = argparse.ArgumentParser(
-        description=desc,
-        usage="%(prog)s [-h] [configs ...] [--overrides ...]",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="config arguments:\n" + "\n".join(model_help(model_cls)),
-    )
-    parser.add_argument(
-        "config",
-        nargs="*",
-        default=[],
-        type=Path,
-        help="Path to config file(s); later files override earlier ones",
-    )
+    argv = sys.argv[1:]
 
-    known, unknown = parser.parse_known_args()
+    def print_help():
+        prog = Path(sys.argv[0]).name
+        lines = [f"usage: {prog} [-h] [configs ...] [--overrides ...]"]
+        if desc:
+            lines.append(f"\n{desc}")
+        lines.append("\nconfig arguments:")
+        lines.extend(model_help(model_cls))
+        print("\n".join(lines))
+        raise SystemExit(0)
 
-    configs = [load_config(p) for p in known.config]
-    overrides = parse_unknown_args(unknown, model_cls=model_cls)
-    del known, unknown
+    def split_argv() -> tuple[list[Path], list[str]]:
+        config_paths: list[Path] = []
+        for i, tok in enumerate(argv):
+            if tok.startswith("-"):
+                return config_paths, argv[i:]
+            config_paths.append(Path(tok))
+        return config_paths, []
+
+    if "-h" in argv or "--help" in argv:
+        print_help()
+
+    config_paths, flag_tokens = split_argv()
+
+    configs = [load_config(p) for p in config_paths]
+    overrides = parse_flags(flag_tokens, model_cls)
 
     data = {}
     for new in configs + [overrides]:
