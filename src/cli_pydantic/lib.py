@@ -104,12 +104,12 @@ def model_help(model: type[BaseModel], prefix: str = "") -> list[str]:
                     if field.default is PydanticUndefined
                     else f" (default: {field.default})"
                 )
-                desc = field.description or ""
+                desc = f" {field.description}" if field.description else ""
                 out.append((f"--{key} {ty_name(ann)}", f"{desc}{default}"))
         return out
 
     items = entries(model, prefix)
-    col = max((len(f) for f, _ in items), default=0) + 2
+    col = max((len(f) for f, _ in items), default=0) + 1
     return [f"  {f:<{col}}{h}" for f, h in items]
 
 
@@ -152,9 +152,10 @@ def cli[T: BaseModel](model_cls: type[T], desc: str = "") -> T:
 
     def print_help():
         prog = Path(sys.argv[0]).name
-        lines = [f"usage: {prog} [-h] [configs ...] [--overrides ...]"]
+        lines = []
         if desc:
-            lines.append(f"\n{desc}")
+            lines.append(f"help: {desc}\n")
+        lines.append(f"usage: {prog} [-h] [configs ...] [--overrides ...]")
         lines.append("\nconfig arguments:")
         lines.extend(model_help(model_cls))
         print("\n".join(lines))
