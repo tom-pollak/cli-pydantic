@@ -112,6 +112,9 @@ def model_help(model: type[BaseModel], prefix: str = "") -> list[str]:
 
 
 def load_config(path: Path) -> dict:
+    if not path.exists():
+        raise ValueError(f"Config file not found: {path}")
+
     raw = path.read_text()
     if not raw.strip():
         data = {}
@@ -129,32 +132,29 @@ def load_config(path: Path) -> dict:
     return data
 
 
-def cli[T: BaseModel](
-    model_cls: type[T], desc: str = "", args: list[str] | None = None
-) -> T:
+def cli[T: BaseModel](model_cls: type[T], desc: str = "") -> T:
     parser = argparse.ArgumentParser(
         description=desc,
-        usage="%(prog)s [-h] [config] [overrides ...]",
+        usage="%(prog)s [-h] [configs ...] [--overrides ...]",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="config:\n" + "\n".join(model_help(model_cls)),
+        epilog="config arguments:\n" + "\n".join(model_help(model_cls)),
     )
     parser.add_argument(
         "config",
-        nargs="?",
-        default=None,
+        nargs="*",
+        default=[],
         type=Path,
-        help="Path to config file",
+        help="Path to config file(s); later files override earlier ones",
     )
 
-    known, unknown = parser.parse_known_args(args=args)
-    config_path = known.config
+    known, unknown = parser.parse_known_args()
 
-    if config_path is not None:
-        if not config_path.exists():
-            raise ValueError(f"Config file not found: {known.config}")
-        data = load_config(known.config)
-    else:
-        data = {}
-
+    configs = [load_config(p) for p in known.config]
     overrides = parse_unknown_args(unknown, model_cls=model_cls)
-    return model_cls.model_validate(deep_merge(data, overrides))
+    del known, unknown
+
+    data = {}
+    for new in configs + [overrides]:
+        deep_merge(data, new)
+
+    return model_cls.model_validate(data)
