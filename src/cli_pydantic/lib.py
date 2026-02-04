@@ -1,6 +1,10 @@
+import argparse
+import json
 from collections import deque
+from pathlib import Path
 from typing import get_origin
 
+import yaml
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
@@ -85,17 +89,72 @@ def model_help(model: type[BaseModel], prefix: str = "") -> list[str]:
         name = getattr(ann, "__name__", None)
         return name if name and "[" not in str(ann) else str(ann)
 
-    lines = []
-    for name, field in model.model_fields.items():
-        key = f"{prefix}{name}"
-        ann = field.annotation
-        if isinstance(ann, type) and issubclass(ann, BaseModel):
-            lines.extend(model_help(ann, prefix=f"{key}."))
-        else:
-            default = (
-                "required" if field.default is PydanticUndefined else field.default
-            )
-            desc = f"  {field.description}" if field.description else ""
-            lines.append(f"  --{key}  {ty_name(ann)} (default: {default}){desc}")
-    return lines
+    def entries(m, pfx):
+        out = []
+        for name, field in m.model_fields.items():
+            key = f"{pfx}{name}"
+            ann = field.annotation
+            if isinstance(ann, type) and issubclass(ann, BaseModel):
+                out.extend(entries(ann, f"{key}."))
+            else:
+                default = (
+                    ""
+                    if field.default is PydanticUndefined
+                    else f" (default: {field.default})"
+                )
+                desc = field.description or ""
+                out.append((f"--{key} {ty_name(ann)}", f"{desc}{default}"))
+        return out
 
+    items = entries(model, prefix)
+    col = max((len(f) for f, _ in items), default=0) + 2
+    return [f"  {f:<{col}}{h}" for f, h in items]
+
+
+def load_config(path: Path) -> dict:
+    raw = path.read_text()
+    if not raw.strip():
+        data = {}
+    elif path.suffix == ".json":
+        data = json.loads(raw)
+    elif path.suffix in {".yaml", ".yml"}:
+        data = yaml.safe_load(raw)
+    else:
+        raise ValueError(f"Unsupported config file type: {path.suffix}")
+
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Config file must contain a mapping, got {type(data).__name__}"
+        )
+    return data
+
+
+def cli[T: BaseModel](
+    model_cls: type[T], desc: str = "", args: list[str] | None = None
+) -> T:
+    parser = argparse.ArgumentParser(
+        description=desc,
+        usage="%(prog)s [-h] [config] [overrides ...]",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="config:\n" + "\n".join(model_help(model_cls)),
+    )
+    parser.add_argument(
+        "config",
+        nargs="?",
+        default=None,
+        type=Path,
+        help="Path to config file",
+    )
+
+    known, unknown = parser.parse_known_args(args=args)
+    config_path = known.config
+
+    if config_path is not None:
+        if not config_path.exists():
+            raise ValueError(f"Config file not found: {known.config}")
+        data = load_config(known.config)
+    else:
+        data = {}
+
+    overrides = parse_unknown_args(unknown, model_cls=model_cls)
+    return model_cls.model_validate(deep_merge(data, overrides))
