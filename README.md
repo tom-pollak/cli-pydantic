@@ -14,8 +14,7 @@ pip install cli-pydantic
 ## Usage
 
 ```python
-# train.py
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from cli_pydantic import cli
 
 class Data(BaseModel):
@@ -31,7 +30,7 @@ class Config(BaseModel):
     data: Data = Data()
     model: Model = Model()
     epochs: int = 10
-    verbose: bool = False
+    profile: bool = Field(False, description="dump chrome trace")
 
 cfg = cli(Config, desc="Training pipeline")
 ```
@@ -47,7 +46,7 @@ python train.py base.yaml
 python train.py base.yaml fast.yaml --model.lr 0.05 --epochs 3
 
 # Lists and booleans
-python train.py --model.layers 16,32 --verbose
+python train.py --model.layers 16,32 --profile
 ```
 
 ## Semantics:
@@ -56,3 +55,21 @@ python train.py --model.layers 16,32 --verbose
 - For lists: `--nums=1,2,3` or `--nums 1 --nums=2 --nums 3`
 - For bools: `--enable` / `--no-enable`
 - Lists will _replace_ previous configs on override -- not append!
+
+## Automatic help
+
+```bash
+$ python train.py --help
+help: Training pipeline
+
+usage: train.py [-h] [configs ...] [--overrides ...]
+
+config arguments:
+  --data.path str          (default: ./data)
+  --data.splits list[str]  (default: ['train', 'val'])
+  --model.arch str         (default: resnet50)
+  --model.lr float         (default: 0.001)
+  --model.layers list[int] (default: [64, 128, 256])
+  --epochs int             (default: 10)
+  --verbose bool           dump chrome trace (default: False)
+```
