@@ -8,7 +8,7 @@ import yaml
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
-__all__ = ["cli", "deep_merge", "model_help", "parse_unknown_args"]
+__all__ = ["cli"]
 
 
 def resolve_field_type(model_cls: type[BaseModel], path: list[str]) -> type | None:
