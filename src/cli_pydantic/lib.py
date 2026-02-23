@@ -134,7 +134,9 @@ def load_config(path: Path) -> dict:
     return data
 
 
-def cli[T: BaseModel](model_cls: type[T], desc: str = "") -> T:
+def cli[T: BaseModel](
+    model_cls: type[T], desc: str = "", argv: list[str] | None = None
+) -> T:
     """Build a CLI from a Pydantic model, merging config files and --overrides.
 
     Positional arguments are paths to JSON/YAML config files (later files
@@ -144,11 +146,12 @@ def cli[T: BaseModel](model_cls: type[T], desc: str = "") -> T:
     Args:
         model_cls: The Pydantic model class that defines the config schema.
         desc: Optional description shown in ``--help`` output.
+        argv: Raw CLI args. Default: ``sys.argv[1:]``.
 
     Returns:
         A validated instance of *model_cls*.
     """
-    argv = sys.argv[1:]
+    argv = argv or sys.argv[1:]
 
     def print_help():
         prog = Path(sys.argv[0]).name
