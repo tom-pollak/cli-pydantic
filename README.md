@@ -1,6 +1,6 @@
 # cli-pydantic
 
-Turn a Pydantic model into a CLI. I dislike every other CLI library so here's yet another one.
+Turn a Pydantic model into a CLI. I dislike every other CLI library so here's another one.
 
 - CLI defined by Pydantic
 - Use multiple YAML / JSON configs with `--flag` CLI overrides.
@@ -72,4 +72,29 @@ config arguments:
   --model.layers list[int] (default: [64, 128, 256])
   --epochs int             (default: 10)
   --verbose bool           dump chrome trace (default: False)
+```
+
+
+## Errors:
+
+### Validation
+
+```python
+cli(Config, argv=['--epochs', 'not_a_number', '--model.lr', 'also_bad'])
+```
+
+```
+Validation failed:
+  model.lr: Input should be a valid number, unable to parse string as a number
+  epochs: Input should be a valid integer, unable to parse string as an integer
+```
+
+### Config
+
+```python
+cli(Config, argv=['--nonexistent', 'val'])
+```
+
+```
+Unknown option: --nonexistent
 ```
