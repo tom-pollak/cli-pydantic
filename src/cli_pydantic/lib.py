@@ -12,7 +12,7 @@ __all__ = ["cli", "ConfigError"]
 
 
 class ConfigError(Exception):
-    pass
+    """Raised for invalid CLI flags, config files, or validation failures."""
 
 
 def resolve_field_type(model_cls: type[BaseModel], path: list[str]) -> type | None:
@@ -154,6 +154,8 @@ def cli[T: BaseModel](
         model_cls: The Pydantic model class that defines the config schema.
         desc: Optional description shown in ``--help`` output.
         argv: Raw CLI args. Default: ``sys.argv[1:]``.
+        raise_on_error: If True, raise ``ConfigError`` on bad input.
+            If False (default), print the error to stderr and exit.
 
     Returns:
         A validated instance of *model_cls*.
