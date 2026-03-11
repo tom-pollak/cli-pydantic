@@ -4,7 +4,7 @@ version = "0.2.2"
 description = "Add your description here"
 readme = "README.md"
 authors = [
-    { name = "Tom Pollak", email = "tomp@graphcore.ai" }
+    { name = "Tom Pollak", email = "tompollak1000@gmail.com" }
 ]
 requires-python = ">=3.12"
 dependencies = [
