@@ -5,7 +5,7 @@ import json
 import pytest
 from pydantic import BaseModel
 
-from cli_pydantic import ConfigError, cli
+from cli_pydantic import CliError, cli
 
 
 class Data(BaseModel):
@@ -106,25 +106,25 @@ def test_help(monkeypatch, capsys):
 
 def test_errors(monkeypatch, tmp_path):
     monkeypatch.setattr("sys.argv", ["prog", "--nonexistent", "val"])
-    with pytest.raises(ConfigError, match="Unknown option"):
+    with pytest.raises(CliError, match="Unknown option"):
         cli(Config, raise_on_error=True)
 
     monkeypatch.setattr("sys.argv", ["prog", "-x"])
-    with pytest.raises(ConfigError, match="Expected --key"):
+    with pytest.raises(CliError, match="Expected --key"):
         cli(Config, raise_on_error=True)
 
     monkeypatch.setattr("sys.argv", ["prog", str(tmp_path / "nope.yaml")])
-    with pytest.raises(ConfigError, match="Config file not found"):
+    with pytest.raises(CliError, match="Config file not found"):
         cli(Config, raise_on_error=True)
 
     toml = tmp_path / "config.toml"
     toml.write_text("x = 1")
     monkeypatch.setattr("sys.argv", ["prog", str(toml)])
-    with pytest.raises(ConfigError, match="Unsupported config file type"):
+    with pytest.raises(CliError, match="Unsupported config file type"):
         cli(Config, raise_on_error=True)
 
-    # pydantic validation errors are wrapped in ConfigError
+    # pydantic validation errors are wrapped in CliError
     monkeypatch.setattr("sys.argv", ["prog", "--epochs", "not_a_number"])
-    with pytest.raises(ConfigError, match="epochs") as exc_info:
+    with pytest.raises(CliError, match="epochs") as exc_info:
         cli(Config, raise_on_error=True)
     assert "Validation failed" in str(exc_info.value)

@@ -8,10 +8,10 @@ import yaml
 from pydantic import BaseModel, ValidationError
 from pydantic_core import PydanticUndefined
 
-__all__ = ["cli", "ConfigError"]
+__all__ = ["cli", "CliError"]
 
 
-class ConfigError(Exception):
+class CliError(Exception):
     """Raised for invalid CLI flags, config files, or validation failures."""
 
 
@@ -37,7 +37,7 @@ def parse_flags(tokens: list[str], model_cls: type[BaseModel]) -> dict:
     def route(key: str) -> list[str]:
         parts = key.replace("-", "_").split(".")
         if resolve_field_type(model_cls, parts) is None:
-            raise ConfigError(f"Unknown option: --{key}")
+            raise CliError(f"Unknown option: --{key}")
         return parts
 
     def put(parts: list[str], val):
@@ -52,7 +52,7 @@ def parse_flags(tokens: list[str], model_cls: type[BaseModel]) -> dict:
             vals = val.split(",") if isinstance(val, str) and "," in val else [val]
             cur.setdefault(k, []).extend(vals)
         elif cur.get(k, val) != val:
-            raise ConfigError(f"Duplicate value for {'.'.join(parts)}")
+            raise CliError(f"Duplicate value for {'.'.join(parts)}")
         else:
             cur[k] = val
 
@@ -63,13 +63,13 @@ def parse_flags(tokens: list[str], model_cls: type[BaseModel]) -> dict:
     while q:
         t = q.popleft()
         if not t.startswith("--"):
-            raise ConfigError(f"Expected --key, got: {t}")
+            raise CliError(f"Expected --key, got: {t}")
 
         s = t[2:]
 
         if s.startswith("no-"):  # --no-flag
             if "=" in s or has_value():
-                raise ConfigError(f"--no-* flags can't take a value: {t}")
+                raise CliError(f"--no-* flags can't take a value: {t}")
             key, val = s[3:], False
         elif "=" in s:  # --k=v
             key, val = s.split("=", 1)
@@ -119,7 +119,7 @@ def model_help(model: type[BaseModel], prefix: str = "") -> list[str]:
 
 def load_config(path: Path) -> dict:
     if not path.exists():
-        raise ConfigError(f"Config file not found: {path}")
+        raise CliError(f"Config file not found: {path}")
 
     raw = path.read_text()
     if not raw.strip():
@@ -129,10 +129,10 @@ def load_config(path: Path) -> dict:
     elif path.suffix in {".yaml", ".yml"}:
         data = yaml.safe_load(raw)
     else:
-        raise ConfigError(f"Unsupported config file type: {path.suffix}")
+        raise CliError(f"Unsupported config file type: {path.suffix}")
 
     if not isinstance(data, dict):
-        raise ConfigError(
+        raise CliError(
             f"Config file must contain a mapping, got {type(data).__name__}"
         )
     return data
@@ -154,7 +154,7 @@ def cli[T: BaseModel](
         model_cls: The Pydantic model class that defines the config schema.
         desc: Optional description shown in ``--help`` output.
         argv: Raw CLI args. Default: ``sys.argv[1:]``.
-        raise_on_error: If True, raise ``ConfigError`` on bad input.
+        raise_on_error: If True, raise ``CliError`` on bad input.
             If False (default), print the error to stderr and exit.
 
     Returns:
@@ -189,7 +189,7 @@ def cli[T: BaseModel](
     try:
         configs = [load_config(p) for p in config_paths]
         overrides = parse_flags(flag_tokens, model_cls)
-    except ConfigError:
+    except CliError:
         if raise_on_error:
             raise
         print(f"error: {sys.exc_info()[1]}", file=sys.stderr)
@@ -206,7 +206,7 @@ def cli[T: BaseModel](
             f"  {'.'.join(str(x) for x in err['loc'])}: {err['msg']}"
             for err in e.errors()
         ]
-        err = ConfigError("Validation failed:\n" + "\n".join(items))
+        err = CliError("Validation failed:\n" + "\n".join(items))
         if raise_on_error:
             raise err from e
         print(err, file=sys.stderr)

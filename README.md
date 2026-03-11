@@ -113,7 +113,7 @@ cli[T: BaseModel](model_cls: type[T], desc: str = '', argv: list[str] | None = N
         model_cls: The Pydantic model class that defines the config schema.
         desc: Optional description shown in ``--help`` output.
         argv: Raw CLI args. Default: ``sys.argv[1:]``.
-        raise_on_error: If True, raise ``ConfigError`` on bad input.
+        raise_on_error: If True, raise ``CliError`` on bad input.
             If False (default), print the error to stderr and exit.
 
     Returns:
