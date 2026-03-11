@@ -1,3 +1,3 @@
-__all__ = ["cli"]
+__all__ = ["cli", "ConfigError"]
 
-from .lib import cli
+from .lib import ConfigError, cli

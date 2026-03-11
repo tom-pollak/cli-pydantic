@@ -5,10 +5,14 @@ from pathlib import Path
 from typing import get_origin
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from pydantic_core import PydanticUndefined
 
-__all__ = ["cli"]
+__all__ = ["cli", "ConfigError"]
+
+
+class ConfigError(Exception):
+    pass
 
 
 def resolve_field_type(model_cls: type[BaseModel], path: list[str]) -> type | None:
@@ -33,7 +37,7 @@ def parse_flags(tokens: list[str], model_cls: type[BaseModel]) -> dict:
     def route(key: str) -> list[str]:
         parts = key.replace("-", "_").split(".")
         if resolve_field_type(model_cls, parts) is None:
-            raise ValueError(f"Unknown option: --{key}")
+            raise ConfigError(f"Unknown option: --{key}")
         return parts
 
     def put(parts: list[str], val):
@@ -48,7 +52,7 @@ def parse_flags(tokens: list[str], model_cls: type[BaseModel]) -> dict:
             vals = val.split(",") if isinstance(val, str) and "," in val else [val]
             cur.setdefault(k, []).extend(vals)
         elif cur.get(k, val) != val:
-            raise ValueError(f"Duplicate value for {'.'.join(parts)}")
+            raise ConfigError(f"Duplicate value for {'.'.join(parts)}")
         else:
             cur[k] = val
 
@@ -59,13 +63,13 @@ def parse_flags(tokens: list[str], model_cls: type[BaseModel]) -> dict:
     while q:
         t = q.popleft()
         if not t.startswith("--"):
-            raise ValueError(f"Expected --key, got: {t}")
+            raise ConfigError(f"Expected --key, got: {t}")
 
         s = t[2:]
 
         if s.startswith("no-"):  # --no-flag
             if "=" in s or has_value():
-                raise ValueError(f"--no-* flags can't take a value: {t}")
+                raise ConfigError(f"--no-* flags can't take a value: {t}")
             key, val = s[3:], False
         elif "=" in s:  # --k=v
             key, val = s.split("=", 1)
@@ -115,7 +119,7 @@ def model_help(model: type[BaseModel], prefix: str = "") -> list[str]:
 
 def load_config(path: Path) -> dict:
     if not path.exists():
-        raise ValueError(f"Config file not found: {path}")
+        raise ConfigError(f"Config file not found: {path}")
 
     raw = path.read_text()
     if not raw.strip():
@@ -125,17 +129,20 @@ def load_config(path: Path) -> dict:
     elif path.suffix in {".yaml", ".yml"}:
         data = yaml.safe_load(raw)
     else:
-        raise ValueError(f"Unsupported config file type: {path.suffix}")
+        raise ConfigError(f"Unsupported config file type: {path.suffix}")
 
     if not isinstance(data, dict):
-        raise ValueError(
+        raise ConfigError(
             f"Config file must contain a mapping, got {type(data).__name__}"
         )
     return data
 
 
 def cli[T: BaseModel](
-    model_cls: type[T], desc: str = "", argv: list[str] | None = None
+    model_cls: type[T],
+    desc: str = "",
+    argv: list[str] | None = None,
+    raise_on_error: bool = False,
 ) -> T:
     """Build a CLI from a Pydantic model, merging config files and --overrides.
 
@@ -177,11 +184,28 @@ def cli[T: BaseModel](
 
     config_paths, flag_tokens = split_argv()
 
-    configs = [load_config(p) for p in config_paths]
-    overrides = parse_flags(flag_tokens, model_cls)
+    try:
+        configs = [load_config(p) for p in config_paths]
+        overrides = parse_flags(flag_tokens, model_cls)
+    except ConfigError:
+        if raise_on_error:
+            raise
+        print(f"error: {sys.exc_info()[1]}", file=sys.stderr)
+        raise SystemExit(1)
 
     data = {}
     for new in configs + [overrides]:
         deep_merge(data, new)
 
-    return model_cls.model_validate(data)
+    try:
+        return model_cls.model_validate(data)
+    except ValidationError as e:
+        items = [
+            f"  {'.'.join(str(x) for x in err['loc'])}: {err['msg']}"
+            for err in e.errors()
+        ]
+        err = ConfigError("Validation failed:\n" + "\n".join(items))
+        if raise_on_error:
+            raise err from e
+        print(err, file=sys.stderr)
+        raise SystemExit(1)
