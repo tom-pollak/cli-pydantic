@@ -49,7 +49,7 @@ python train.py base.yaml fast.yaml --model.lr 0.05 --epochs 3
 python train.py --model.layers 16,32 --profile
 ```
 
-## Semantics:
+## Semantics
 
 - Use `--foo bar` or `--foo=bar`
 - For lists: `--nums=1,2,3` or `--nums 1 --nums=2 --nums 3`
@@ -75,7 +75,7 @@ config arguments:
 ```
 
 
-## Errors:
+## Errors
 
 ### Validation
 
@@ -97,4 +97,25 @@ cli(Config, argv=['--nonexistent', 'val'])
 
 ```
 Unknown option: --nonexistent
+```
+
+## Docstring
+
+```python
+cli[T: BaseModel](model_cls: type[T], desc: str = '', argv: list[str] | None = None, raise_on_error: bool = False) -> T
+    Build a CLI from a Pydantic model, merging config files and --overrides.
+
+    Positional arguments are paths to JSON/YAML config files (later files
+    override earlier ones).  Any remaining ``--key value`` flags are parsed
+    as field overrides using dot-notation (e.g. ``--model.lr 0.01``).
+
+    Args:
+        model_cls: The Pydantic model class that defines the config schema.
+        desc: Optional description shown in ``--help`` output.
+        argv: Raw CLI args. Default: ``sys.argv[1:]``.
+        raise_on_error: If True, raise ``ConfigError`` on bad input.
+            If False (default), print the error to stderr and exit.
+
+    Returns:
+        A validated instance of *model_cls*.
 ```
