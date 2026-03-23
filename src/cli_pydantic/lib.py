@@ -1,8 +1,9 @@
 import json
 import sys
 from collections import deque
+from collections.abc import Mapping
 from pathlib import Path
-from typing import get_origin
+from typing import Any, get_args, get_origin
 
 import yaml
 from pydantic import BaseModel, ValidationError
@@ -15,46 +16,85 @@ class CliError(Exception):
     """Raised for invalid CLI flags, config files, or validation failures."""
 
 
-def resolve_field_type(model_cls: type[BaseModel], path: list[str]) -> type | None:
-    """Walk a dotted path through nested BaseModels, return the leaf annotation."""
-    cls = model_cls
+class ResolvedField:
+    def __init__(self, annotation: type | object, dynamic: bool = False):
+        self.annotation = annotation
+        self.dynamic = dynamic
+
+
+def is_model_type(annotation: object) -> bool:
+    return isinstance(annotation, type) and issubclass(annotation, BaseModel)
+
+
+def is_mapping_type(annotation: object) -> bool:
+    origin = get_origin(annotation)
+    if origin is not None:
+        return isinstance(origin, type) and issubclass(origin, Mapping)
+    return annotation is dict
+
+
+def mapping_value_type(annotation: object) -> object:
+    args = get_args(annotation)
+    return args[1] if len(args) == 2 else Any
+
+
+def parse_scalar(value: str):
+    if value == "":
+        return value
+    try:
+        return yaml.safe_load(value)
+    except yaml.YAMLError:
+        return value
+
+
+def resolve_field_type(
+    model_cls: type[BaseModel], path: list[str]
+) -> ResolvedField | None:
+    """Walk dotted paths through BaseModels and mapping fields."""
+    annotation: object = model_cls
+    dynamic = False
     for p in path:
-        if p not in cls.model_fields:
-            return None
-        ann = cls.model_fields[p].annotation
-        if p == path[-1]:
-            return ann
-        if isinstance(ann, type) and issubclass(ann, BaseModel):
-            cls = ann
+        if is_model_type(annotation):
+            if p not in annotation.model_fields:
+                return None
+            annotation = annotation.model_fields[p].annotation
+        elif is_mapping_type(annotation):
+            annotation = mapping_value_type(annotation)
+            dynamic = True
         else:
             return None
-    return None
+    return ResolvedField(annotation, dynamic=dynamic)
 
 
 def parse_flags(tokens: list[str], model_cls: type[BaseModel]) -> dict:
     out = {}
 
-    def route(key: str) -> list[str]:
+    def route(key: str) -> tuple[list[str], ResolvedField]:
         parts = key.replace("-", "_").split(".")
-        if resolve_field_type(model_cls, parts) is None:
+        resolved = resolve_field_type(model_cls, parts)
+        if resolved is None:
             raise CliError(f"Unknown option: --{key}")
-        return parts
+        return parts, resolved
 
-    def put(parts: list[str], val):
+    def put(parts: list[str], resolved: ResolvedField, val):
         cur = out
         for p in parts[:-1]:
             cur = cur.setdefault(p, {})
 
         k = parts[-1]
-        is_list = get_origin(resolve_field_type(model_cls, parts)) is list
+        is_list = get_origin(resolved.annotation) is list
 
         if is_list:
             vals = val.split(",") if isinstance(val, str) and "," in val else [val]
+            vals = [parse_scalar(v) if isinstance(v, str) else v for v in vals]
+            cur.setdefault(k, []).extend(vals)
+        elif resolved.dynamic and isinstance(val, str) and "," in val:
+            vals = [parse_scalar(v) for v in val.split(",")]
             cur.setdefault(k, []).extend(vals)
         elif cur.get(k, val) != val:
             raise CliError(f"Duplicate value for {'.'.join(parts)}")
         else:
-            cur[k] = val
+            cur[k] = parse_scalar(val) if isinstance(val, str) else val
 
     def has_value() -> bool:
         return bool(q) and not q[0].startswith("--")
@@ -76,7 +116,8 @@ def parse_flags(tokens: list[str], model_cls: type[BaseModel]) -> dict:
         else:  # --k v / --flag
             key, val = s, (q.popleft() if has_value() else True)
 
-        put(route(key), val)
+        parts, resolved = route(key)
+        put(parts, resolved, val)
 
     return out
 
@@ -100,8 +141,17 @@ def model_help(model: type[BaseModel], prefix: str = "") -> list[str]:
         for name, field in m.model_fields.items():
             key = f"{pfx}{name}"
             ann = field.annotation
-            if isinstance(ann, type) and issubclass(ann, BaseModel):
+            if is_model_type(ann):
                 out.extend(entries(ann, f"{key}."))
+            elif is_mapping_type(ann):
+                value_ann = mapping_value_type(ann)
+                default = (
+                    ""
+                    if field.default is PydanticUndefined
+                    else f" (default: {field.default})"
+                )
+                desc = f" {field.description}" if field.description else ""
+                out.append((f"--{key}.<key> {ty_name(value_ann)}", f"{desc}{default}"))
             else:
                 default = (
                     ""
@@ -132,9 +182,7 @@ def load_config(path: Path) -> dict:
         raise CliError(f"Unsupported config file type: {path.suffix}")
 
     if not isinstance(data, dict):
-        raise CliError(
-            f"Config file must contain a mapping, got {type(data).__name__}"
-        )
+        raise CliError(f"Config file must contain a mapping, got {type(data).__name__}")
     return data
 
 
