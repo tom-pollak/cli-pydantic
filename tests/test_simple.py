@@ -1,9 +1,10 @@
 """Tests for cli_pydantic."""
 
 import json
+from typing import Any
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from cli_pydantic import CliError, cli
 
@@ -24,6 +25,16 @@ class Config(BaseModel):
     model: Model = Model()
     epochs: int = 10
     verbose: bool = False
+
+
+class DynamicConfig(BaseModel):
+    args: dict[str, Any] = Field(default_factory=dict)
+    model_config = ConfigDict(extra="allow")
+
+
+class StrictConfig(BaseModel):
+    args: dict[str, Any] = Field(default_factory=dict)
+    model_config = ConfigDict(extra="forbid")
 
 
 @pytest.fixture()
@@ -63,6 +74,9 @@ def test_flags(monkeypatch):
 
     monkeypatch.setattr("sys.argv", ["prog", "--model.layers", "32,64"])
     assert cli(Config).model.layers == [32, 64]
+
+    monkeypatch.setattr("sys.argv", ["prog", "--data.path", "a,b"])
+    assert cli(Config).data.path == "a,b"
 
 
 def test_configs(monkeypatch, yaml_config, json_config, tmp_path):
@@ -105,10 +119,6 @@ def test_help(monkeypatch, capsys):
 
 
 def test_errors(monkeypatch, tmp_path):
-    monkeypatch.setattr("sys.argv", ["prog", "--nonexistent", "val"])
-    with pytest.raises(CliError, match="Unknown option"):
-        cli(Config, raise_on_error=True)
-
     monkeypatch.setattr("sys.argv", ["prog", "-x"])
     with pytest.raises(CliError, match="Expected --key"):
         cli(Config, raise_on_error=True)
@@ -128,3 +138,31 @@ def test_errors(monkeypatch, tmp_path):
     with pytest.raises(CliError, match="epochs") as exc_info:
         cli(Config, raise_on_error=True)
     assert "Validation failed" in str(exc_info.value)
+
+    monkeypatch.setattr("sys.argv", ["prog", "--BLOCK_M", "32"])
+    with pytest.raises(CliError, match="BLOCK_M"):
+        cli(StrictConfig, raise_on_error=True)
+
+    monkeypatch.setattr("sys.argv", ["prog", "--foo=1", "--foo.bar=2"])
+    with pytest.raises(CliError, match="Conflicting values for foo"):
+        cli(DynamicConfig, raise_on_error=True)
+
+
+def test_dynamic_flags():
+    cfg = cli(DynamicConfig, argv=["--args.BLOCK_M=32"])
+    assert cfg.args == {"BLOCK_M": "32"}
+
+    cfg = cli(DynamicConfig, argv=["--BLOCK_M=32"])
+    assert cfg.model_extra == {"BLOCK_M": "32"}
+    assert cfg.BLOCK_M == "32"
+
+    cfg = cli(DynamicConfig, argv=["--args.BLOCK_N_OUT=128,256"])
+    assert cfg.args == {"BLOCK_N_OUT": ["128", "256"]}
+
+    cfg = cli(DynamicConfig, argv=["--BLOCK_N_OUT=128,256"])
+    assert cfg.model_extra == {"BLOCK_N_OUT": ["128", "256"]}
+
+    cfg = cli(StrictConfig, argv=["--args.BLOCK_M=32"])
+    assert cfg.args == {"BLOCK_M": "32"}
+
+    assert cli(Config, argv=["--nonexistent", "val"]) == Config()
